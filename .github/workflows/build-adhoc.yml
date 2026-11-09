@@ -22,7 +22,22 @@ jobs:
       - name: Package
         run: |
           APP=$(find build/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
-          echo "$APP"; codesign -dv "$APP" || true
+          echo "$APP"
+          # Ad-hoc builds can't carry restricted entitlements like keychain-access-groups
+          # (AMFI kills the process at launch), so re-sign with only the unrestricted ones.
+          cat > ent.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict><key>com.apple.security.app-sandbox</key><false/></dict></plist>
+          PLIST
+          sed -i '' 's/^ *//' ent.plist
+          codesign -f -s - --entitlements ent.plist "$APP/Contents/Library/LoginItems/Mac Mouse Fix Helper.app"
+          codesign -f -s - --entitlements ent.plist "$APP"
+          codesign --verify --deep --strict "$APP"
+          for x in "$APP" "$APP/Contents/Library/LoginItems/Mac Mouse Fix Helper.app"; do
+            echo "== $x"; codesign -d --entitlements - "$x"
+            if codesign -d --entitlements - --xml "$x" 2>/dev/null | grep -q keychain-access-groups; then echo "restricted entitlement still present"; exit 1; fi
+          done
           ditto -c -k --keepParent "$APP" MacMouseFix.zip
       - uses: actions/upload-artifact@v4
         with:
