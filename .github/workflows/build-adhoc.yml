@@ -1,0 +1,30 @@
+name: Build (ad-hoc signed)
+on:
+  push:
+    branches: [ci-build]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select newest Xcode
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using $X"; sudo xcode-select -s "$X"; xcodebuild -version
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project "Mouse Fix.xcodeproj" -scheme "App - Release" -configuration Release \
+            -derivedDataPath build -destination 'generic/platform=macOS' \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" PROVISIONING_PROFILE_SPECIFIER="" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp=none" build | tail -200
+      - name: Package
+        run: |
+          APP=$(find build/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
+          echo "$APP"; codesign -dv "$APP" || true
+          ditto -c -k --keepParent "$APP" MacMouseFix.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MacMouseFix-adhoc
+          path: MacMouseFix.zip
